@@ -1,0 +1,106 @@
+---
+title: "Estimating and comparing models : REML vs ML"
+subtitle: "(and getting appropriate p-values)"
+author: "Martial Foegel"
+institute: "Laboratoire de Linguistique Formelle" 
+date: 2025-08-28
+date-modified: 2025-08-29
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    toc-expand: true
+    toc-location: left
+    page-layout: full
+    df-print: paged
+    embed-resources: true
+bibliography: references.bib
+link-citations: true 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# ipak function: install and load multiple R packages.
+# check to see if packages are installed. Install them if they are not, 
+# then load them into the R session if load_pkg is set to true.
+
+ipak <- function(pkg, load_pkg = T){
+  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+  if (length(new.pkg)){
+    install.packages(new.pkg, dependencies = TRUE)}
+  if (load_pkg){
+    sapply(pkg, require, character.only = TRUE)}
+}
+
+# usage
+packages_to_load <- c()
+
+packages_not_to_load <- c("lme4", "lmerTest")
+
+ipak(packages_to_load)
+
+ipak(packages_not_to_load, load_pkg = F)
+```
+
+## Definitions
+
+When you collect your data, we assume this data follows a probability distribution (Normal, binary, Poisson, etc) with some unknown parameters (for the normal distribution those would be the mean and standard deviation). The Maximum likelihood estimation (ML or MLE) allows us to estimate, under your statistical model, which set of parameter values of the distribution are the best match for your data, by maximizing a likelihood function (it's a function that calculates the probability of seeing your data under different parameter values). Restricted Maximum Likelihood Estimation (REML) is a partiular for of ML estimation based on a likelihood function from a transformed set of data, so that nuisance parameters (parameter that are not of interest, so the random part of your statistical model) have no effect. REML is usually better than ML for estimating component of variance, especially with many fixed effect, since they tend to be (nearly) unbiased [@luke2017].
+
+## Dataset
+
+For now let's take an example model from the `sleepstudy` dataset. The description of the dataset goes as follow : The average reaction time per day (in milliseconds) for subjects in a sleep deprivation study. Days 0-1 were adaptation and training (T1/T2), day 2 was baseline (B); sleep deprivation started after day 2. We will build the maximal model as per @barr2013 recommendation.
+
+```{r}
+library(lme4)
+
+# Load and prepare data
+data("sleepstudy", package = "lme4")
+
+# Fit the model
+model_maximal <- lmer(Reaction ~ Days + (1 + Days | Subject),
+                      data = sleepstudy)
+
+summary(model_maximal)
+```
+As we can see above, by default the `lmer()` function use REML. This is a good thing since REML a less biased estimation than ML.  
+
+## REML vs ML when comparing model
+
+Now, if you wanted to compare models, you have to be aware that REML is not always the correct estimator to use. REML can be used when comparing two models with the same fixed effect whilst changing the random part, but shouldn't be used the other way around. So for example, when comparing models using Likelihood Ratio Test to get p-values as @barr2013 recommends, *i.e* comparing a model with a fixed effect to one without, you want the model to be fitted with ML ^[This is one of the method to get p-values out of **lme4** packages. By default, the authors of the package didn't want people to get p-values too easily, in order to force people to think about them]. Example below :
+
+
+```{r}
+model_wo_fixed_effect <- lmer(Reaction ~ 1 + (1 + Days | Subject),
+                      data = sleepstudy)
+
+anova(model_maximal, model_wo_fixed_effect)
+```
+
+You can see above, that the models were refitted using ML instead of REML, so we are all good in this case (but be careful about this aspect when using other packages). This default setting is actually detrimental when you want to compare different random part of the model without changing the fixed part.
+
+```{r}
+# Fit the model
+model_wo_slopes <- lmer(Reaction ~ Days + (1 | Subject),
+                      data = sleepstudy)
+
+anova(model_maximal, model_wo_slopes)
+```
+As we can see above, `anova()` did refit our model with ML when it wasn't necessary. You can correct this by changing the `refit` argument inside the function.
+
+```{r}
+anova(model_maximal, model_wo_slopes, refit = FALSE)
+```
+## A better way to get p-values
+
+Comparing model is fine when you are doing model selection. But when you are doing confirmatory data analysis, you generally should have an idea of your model beforehand, and want to get the p-values for it all at once. This is where @luke2017 recommends using either the Satterthwaite or the Kenward-Roger approximation for degrees of freedom. Those methods produce better Type 1 error rate on smaller samples than other methods like the Likelihood Ratio Test. For this, you can use the package **lmerTest**, which will complement the **lme4** package with Satterthwaite's degrees of freedom method. 
+
+```{r}
+library(lmerTest) #Package must be installed first
+
+model_maximal_lmerTest <- lmer(Reaction ~ Days + (1 + Days | Subject),
+                      data = sleepstudy) #Fitting a model using REML
+
+summary(model_maximal_lmerTest) #gives model output with estimated df and p values using Satterthwaite
+```
+You can see above that we directly have access to the p-values. For the the Kenward-Roger approximation you can use the **pbkrtest** package. Regardless of which package you use, it is good practice to precise in your paper/research which method you used to get your p-values and if your model was estimated using REML or ML.
