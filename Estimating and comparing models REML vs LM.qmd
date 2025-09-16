@@ -41,6 +41,9 @@ packages_not_to_load <- c("lme4", "lmerTest")
 ipak(packages_to_load)
 
 ipak(packages_not_to_load, load_pkg = F)
+
+#make sure lmerTest is not loaded, we want to show the difference bf and after loading it
+if("package:lmerTest" %in% search()) detach("package:lmerTest", unload=TRUE) 
 ```
 
 ## Definitions
